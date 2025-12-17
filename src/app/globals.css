@@ -1,0 +1,38 @@
+@import "tailwindcss";
+@import 'mapbox-gl/dist/mapbox-gl.css';
+
+:root {
+  --background: #0f172a;
+  --foreground: #f8fafc;
+}
+
+body {
+  color: var(--foreground);
+  background: var(--background);
+  font-family: Arial, Helvetica, sans-serif;
+  overflow: hidden;
+  /* Prevent scrolling, map is full screen */
+}
+
+/* Mapbox GL JS overrides for custom styling if needed */
+.mapboxgl-popup-content {
+  background: #1e293b;
+  color: #f1f5f9;
+  border-radius: 8px;
+  padding: 12px;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+}
+
+.mapboxgl-ctrl-group {
+  background-color: #1e293b !important;
+  border-radius: 8px !important;
+}
+
+.mapboxgl-ctrl-group button {
+  border-top: 1px solid #334155 !important;
+}
+
+.mapboxgl-ctrl-icon {
+  filter: invert(1);
+  /* Make icons white */
+}
