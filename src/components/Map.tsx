@@ -9,6 +9,9 @@ import rbush from 'rbush'; // spatial index
 import SearchBar from './SearchBar';
 import WeightControls, { Weights } from './WeightControls';
 import RadiusStats, { RadiusData } from './RadiusStats';
+import AuthButton from './auth/AuthButton';
+import { useAuth } from '@/lib/providers/AuthProvider';
+import { useUserPreferences } from '@/lib/hooks/useUserPreferences';
 import {
     calculateBoundingBox,
     fetchTractsByBoundingBox,
@@ -36,6 +39,10 @@ export default function Map({ initialCenter = [-83.5, 32.7], initialZoom = 6.5 }
     const tractDataRef = useRef<TractCentroid[]>([]);
     const spatialIndexRef = useRef<any>(null);
 
+    // Auth and preferences
+    const { user } = useAuth();
+    const { preferences, loading: prefsLoading, updatePreferences } = useUserPreferences(user);
+
     const [lng, setLng] = useState(initialCenter[0]);
     const [lat, setLat] = useState(initialCenter[1]);
     const [zoom, setZoom] = useState(initialZoom);
@@ -52,8 +59,8 @@ export default function Map({ initialCenter = [-83.5, 32.7], initialZoom = 6.5 }
         employmentRate: 0,
         povertyRate: 0
     });
-    const [opacity, setOpacity] = useState(0.15);
-    const [radius, setRadius] = useState(10);
+    const [opacity, setOpacity] = useState(preferences?.opacity ?? 0.15);
+    const [radius, setRadius] = useState(preferences?.radius ?? 10);
     const [enabled, setEnabled] = useState<Record<keyof Weights, boolean>>({
         income: true,
         population: true,
@@ -68,6 +75,54 @@ export default function Map({ initialCenter = [-83.5, 32.7], initialZoom = 6.5 }
 
     // Mount
     useEffect(() => setMounted(true), []);
+
+    // Sync state with loaded preferences
+    useEffect(() => {
+        if (preferences) {
+            setOpacity(preferences.opacity);
+            setRadius(preferences.radius);
+        }
+    }, [preferences]);
+
+    // Save preferences when opacity/radius change (debounced)
+    useEffect(() => {
+        if (!user || !preferences) return;
+
+        const timer = setTimeout(() => {
+            updatePreferences({ opacity, radius });
+        }, 1000); // 1 second debounce
+
+        return () => clearTimeout(timer);
+    }, [opacity, radius, user, preferences, updatePreferences]);
+
+    // Auto-detect location for unauthenticated users via IP
+    useEffect(() => {
+        if (!mounted || !map.current || user || selectedLocation) return;
+
+        detectUserLocation();
+    }, [mounted, user, selectedLocation]);
+
+    const detectUserLocation = async () => {
+        const chicagoCoords: [number, number] = [-87.6298, 41.8781];
+
+        try {
+            const res = await fetch('https://ipapi.co/json/');
+            const data = await res.json();
+
+            // Check if we got valid data and it's in the US
+            if (data.latitude && data.longitude && data.country_code === 'US') {
+                const center: [number, number] = [data.longitude, data.latitude];
+                handleLocationSelect(center);
+            } else {
+                // Not in US or invalid data - default to Chicago
+                handleLocationSelect(chicagoCoords);
+            }
+        } catch (error) {
+            console.error('Failed to detect location, defaulting to Chicago:', error);
+            // API failed - default to Chicago
+            handleLocationSelect(chicagoCoords);
+        }
+    };
 
     // Initialize Map
     useEffect(() => {
@@ -197,6 +252,15 @@ export default function Map({ initialCenter = [-83.5, 32.7], initialZoom = 6.5 }
         if (!map.current) return;
         const source = map.current.getSource('tracts') as mapboxgl.GeoJSONSource;
         if (!source) return;
+
+        // Check if any metrics are enabled
+        const enabledCount = Object.values(enabled).filter(Boolean).length;
+        if (enabledCount === 0) {
+            // No metrics enabled - show neutral gray
+            map.current.setPaintProperty('tracts-fill', 'fill-color', '#555');
+            return;
+        }
+
         const getMultiplier = (k: keyof Weights) => enabled[k] ? 1 + weights[k] * 0.1 : 0;
         const consider = (c: TractCentroid) => {
             if (!selectedLocation) return true;
@@ -329,6 +393,7 @@ export default function Map({ initialCenter = [-83.5, 32.7], initialZoom = 6.5 }
                 </div>
             )}
             <SearchBar onSelectCallback={handleLocationSelect} />
+            <AuthButton />
             {selectedLocation && (
                 <>
                     <WeightControls
